@@ -407,12 +407,20 @@ export function createChart(container, config, ctx) {
         textColor: "#8a92a6",
       },
       grid: {
-        vertLines: { color: "rgba(31,37,54,0.5)" },
+        // Brighter vertical grid for visible day/session boundaries
+        vertLines: { color: "rgba(80, 95, 130, 0.28)", style: 1 },
         horzLines: { color: "rgba(31,37,54,0.5)" },
       },
       crosshair: { mode: 1 },
       timeScale: { borderColor: "#1f2536", timeVisible: true, secondsVisible: false },
       rightPriceScale: { borderColor: "#1f2536" },
+      // Native interaction: drag to pan, wheel/pinch to zoom
+      handleScroll: {
+        mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true,
+      },
+      handleScale: {
+        mouseWheel: true, pinch: true, axisPressedMouseMove: true,
+      },
     };
     chart = LightweightCharts.createChart(chartContainer, opts);
     candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
@@ -432,10 +440,13 @@ export function createChart(container, config, ctx) {
   ro.observe(chartContainer);
 
   let timer;
+  // Track what the chart was last fit to, so we only auto-fit when it changes.
+  // Periodic refreshes preserve the user's pan/zoom state.
+  let lastFitKey = null;
   const instance = {
     config,
     closeBtn: shell.closeBtn,
-    async refresh() {
+    async refresh({ keepView = false } = {}) {
       try {
         if (!chart) buildChart();
         if (auto) {
@@ -484,7 +495,14 @@ export function createChart(container, config, ctx) {
         const netEl = stats.querySelector('[data-stat="net"]');
         netEl.textContent = fmtPct(netPct);
         netEl.style.color = net >= 0 ? "var(--green)" : "var(--red)";
-        chart.timeScale().fitContent();
+
+        // Only auto-fit when the user-visible state changed (symbol or timeframe).
+        // Periodic refreshes preserve whatever pan/zoom the user has set.
+        const fitKey = `${symbol}|${timeframe}`;
+        if (!keepView && fitKey !== lastFitKey) {
+          chart.timeScale().fitContent();
+          lastFitKey = fitKey;
+        }
       } catch (e) {
         console.error("chart refresh failed", e);
         toolbar.querySelector(".chart-price").textContent = "Error";
@@ -519,7 +537,8 @@ export function createChart(container, config, ctx) {
 
   // initial build deferred until container has size
   setTimeout(() => { buildChart(); instance.refresh(); }, 50);
-  timer = setInterval(() => instance.refresh(), 30_000);
+  // Periodic refresh preserves the user's pan/zoom; only symbol/timeframe changes refit.
+  timer = setInterval(() => instance.refresh({ keepView: true }), 30_000);
   const baseDestroy = instance.destroy;
   instance.destroy = () => { unsubscribe?.(); baseDestroy(); };
   return instance;
