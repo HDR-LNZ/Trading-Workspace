@@ -286,7 +286,9 @@ export function createWatchlist(container, config, ctx) {
 export function createChart(container, config, ctx) {
   let symbol = (config.symbol || "SPY").toUpperCase();
   let range = config.range || "1D";
-  let interval = config.interval || "5m";
+  // Always derive interval from range so saved layouts with stale interval values
+  // (e.g. older "5m" config when range is now "1D"=>15m) self-correct on load.
+  let interval; // assigned after RANGE_LABELS is defined below
   let auto = config.auto !== false; // default ON — picks biggest mover from watchlists
   const MIN_MARKET_CAP = 10e9; // exclude small/meme caps
   let chart, candleSeries, volumeSeries;
@@ -304,7 +306,7 @@ export function createChart(container, config, ctx) {
   const toolbar = document.createElement("div");
   toolbar.className = "chart-toolbar";
   const RANGE_LABELS = {
-    "1D": { interval: "5m", title: "1 day, 5-minute bars" },
+    "1D": { interval: "15m", title: "1 day, 15-minute bars" },
     "1W": { interval: "30m", title: "1 week, 30-minute bars" },
     "1M": { interval: "1h", title: "1 month, hourly bars" },
     "3M": { interval: "1d", title: "3 months, daily bars" },
@@ -314,8 +316,9 @@ export function createChart(container, config, ctx) {
   };
   const intervalLabel = (r) => {
     const i = RANGE_LABELS[r]?.interval || "1d";
-    return { "5m": "5m bars", "30m": "30m bars", "1h": "Hourly bars", "1d": "Daily bars" }[i] || `${i} bars`;
+    return { "5m": "5m bars", "15m": "15m bars", "30m": "30m bars", "1h": "Hourly bars", "1d": "Daily bars" }[i] || `${i} bars`;
   };
+  interval = RANGE_LABELS[range]?.interval || "1d";
   toolbar.innerHTML = `
     <button class="auto-pill ${auto ? "active" : ""}" data-auto title="Auto-pick the biggest %-mover from watchlists (market cap ≥ $10B). Re-checks every ~20s when any watchlist refreshes; chart re-fetches candles every 30s.">AUTO</button>
     <input type="text" class="chart-symbol-input" value="${symbol}" />
@@ -397,7 +400,9 @@ export function createChart(container, config, ctx) {
   });
 
   function rangeToInterval(r) {
-    return { "1D": "5m", "1W": "30m", "1M": "1h", "3M": "1d", "6M": "1d", "1Y": "1d", "2Y": "1d" }[r] || "1d";
+    // Single source of truth: read from RANGE_LABELS so the interval, the
+    // tooltip and the visible label can never drift out of sync.
+    return RANGE_LABELS[r]?.interval || "1d";
   }
 
   function buildChart() {
