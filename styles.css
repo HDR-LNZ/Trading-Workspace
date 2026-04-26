@@ -175,6 +175,32 @@ main {
 }
 .tk-meta { min-width: 0; }
 .tk-symbol { font-weight: 600; font-size: 12px; }
+.tk-score {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  margin-left: 4px;
+  border-radius: 4px;
+  background: rgba(255, 216, 77, 0.15);
+  color: var(--accent);
+  letter-spacing: 0.3px;
+  vertical-align: 1px;
+}
+.ai-ranked-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 216, 77, 0.15);
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  margin-right: 4px;
+  align-self: center;
+  transition: opacity 0.2s;
+}
+.ai-ranked-badge.loading { opacity: 0.4; animation: pulse 1.2s ease infinite; }
+@keyframes pulse { 50% { opacity: 0.8; } }
 .tk-name { color: var(--text-dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tk-quote { text-align: right; }
 .tk-price { font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; }

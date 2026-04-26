@@ -83,18 +83,85 @@ function escapeHtml(s) {
 
 /* ------------------------------------------------------------------ watchlist */
 
+const RANK_COOLDOWN_MS = 30 * 60_000; // re-rank each sector at most every 30 min
+const RANK_SYSTEM = `You are a markets analyst ranking stocks within a sector by investibility.
+
+You will receive a sector's watchlist with current quote, price vs 50/200-day moving averages, distance from 52-week highs/lows, market cap, and average volume.
+
+Score each ticker 0-100 on investibility right now. Combine:
+- Sector positioning and picks-and-shovels strength (where in the value chain, moat, govt/institutional exposure)
+- Market cap / liquidity (small caps with thin liquidity get penalized)
+- Technical setup (price vs MAs, distance from 52w high/low)
+- Recent momentum and direction
+- Catalysts and prospects from your training knowledge of these names
+
+Return ONLY a JSON object — no preamble, no markdown fences — in this exact shape:
+{"ranking":[{"symbol":"XXX","score":92,"reason":"one short line"},...]}
+
+Sort the array from most investible (highest score) to least. Include EVERY ticker provided. Keep each reason under 80 chars.`;
+
+function buildRankPrompt(sectorName, sectorDescription, quotes) {
+  const lines = [];
+  lines.push(`Sector: ${sectorName}`);
+  lines.push(`Thesis: ${sectorDescription}`);
+  lines.push(`Date: ${new Date().toISOString().split("T")[0]}`);
+  lines.push("");
+  lines.push("Tickers:");
+  for (const q of quotes) {
+    const parts = [`${q.symbol} ${q.name || ""}: $${q.price?.toFixed(2)}`];
+    if (q.changePct != null) parts.push(`${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}% today`);
+    if (q.marketCap) parts.push(`mc $${(q.marketCap / 1e9).toFixed(1)}B`);
+    if (q.fiftyDayAverage) parts.push(`vs50d ${(((q.price - q.fiftyDayAverage) / q.fiftyDayAverage) * 100).toFixed(1)}%`);
+    if (q.twoHundredDayAverage) parts.push(`vs200d ${(((q.price - q.twoHundredDayAverage) / q.twoHundredDayAverage) * 100).toFixed(1)}%`);
+    if (q.fiftyTwoWeekHigh) parts.push(`vs52wH ${(((q.price - q.fiftyTwoWeekHigh) / q.fiftyTwoWeekHigh) * 100).toFixed(1)}%`);
+    if (q.fiftyTwoWeekLow) parts.push(`vs52wL +${(((q.price - q.fiftyTwoWeekLow) / q.fiftyTwoWeekLow) * 100).toFixed(1)}%`);
+    lines.push(`  ${parts.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+function parseRanking(text) {
+  // Try strict parse first (after stripping markdown fences)
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed?.ranking?.length) return parsed.ranking;
+  } catch {}
+  // Fallback: extract the ranking array via regex and parse the items individually,
+  // tolerating a truncated final entry.
+  const arrMatch = cleaned.match(/"ranking"\s*:\s*\[([\s\S]*)/);
+  if (!arrMatch) throw new Error("no ranking array");
+  const items = [];
+  const itemRe = /\{[^{}]*"symbol"\s*:\s*"([^"]+)"[^{}]*"score"\s*:\s*(\d+)[^{}]*"reason"\s*:\s*"([^"]*)"[^{}]*\}/g;
+  let m;
+  while ((m = itemRe.exec(arrMatch[1])) !== null) {
+    items.push({ symbol: m[1], score: parseInt(m[2], 10), reason: m[3] });
+  }
+  if (!items.length) throw new Error("could not extract any ranked items");
+  return items;
+}
+
 export function createWatchlist(container, config, ctx) {
   const sector = SECTORS[config.sectorId] || SECTORS["critical-minerals"];
   let lastQuotes = [];
+  let ranking = []; // [{symbol, score, reason}]
+  let lastRankedAt = 0;
+  let rankInFlight = false;
 
   const shell = paneShell({
     title: sector.name,
     sub: sector.description,
     sectorId: config.sectorId,
     onChat: () => ctx.openChat({ kind: "sector", sectorId: config.sectorId, quotes: lastQuotes }),
-    onRefresh: () => instance.refresh(),
+    onRefresh: () => { lastRankedAt = 0; instance.refresh(); }, // manual refresh forces re-rank
   });
   container.appendChild(shell.wrap);
+  // Subtle "AI-ranked" badge in the header, before the action buttons
+  const badge = document.createElement("span");
+  badge.className = "ai-ranked-badge";
+  badge.textContent = "AI";
+  badge.title = "Sorted by Claude — most investible at the top";
+  shell.header.querySelector(".pane-actions").prepend(badge);
 
   const listWrap = document.createElement("div");
   listWrap.className = "watchlist";
@@ -107,17 +174,39 @@ export function createWatchlist(container, config, ctx) {
     listWrap.appendChild(sk);
   }
 
-  function render(quotes) {
+  function sortedQuotes() {
+    if (!ranking.length) return lastQuotes;
+    const order = new Map(ranking.map((r, i) => [r.symbol, i]));
+    return [...lastQuotes].sort((a, b) => {
+      const ai = order.has(a.symbol) ? order.get(a.symbol) : 999;
+      const bi = order.has(b.symbol) ? order.get(b.symbol) : 999;
+      return ai - bi;
+    });
+  }
+
+  function reasonFor(symbol) {
+    return ranking.find(r => r.symbol === symbol)?.reason || "";
+  }
+  function scoreFor(symbol) {
+    return ranking.find(r => r.symbol === symbol)?.score;
+  }
+
+  function render() {
+    const quotes = sortedQuotes();
     listWrap.innerHTML = "";
     for (const q of quotes) {
       const row = document.createElement("div");
       row.className = `watchlist-row ${upDown(q.changePct)}`;
       const ext = (q.preMarketPrice || q.postMarketPrice) ? renderExtended(q) : "";
+      const reason = reasonFor(q.symbol);
+      const score = scoreFor(q.symbol);
+      const tooltip = reason ? `${score != null ? `Score ${score}/100 — ` : ""}${reason}` : (q.name || "");
+      row.title = tooltip;
       row.innerHTML = `
         <div class="tk-icon" style="background:${sector.color}33;color:${sector.color};border-color:${sector.color}55">${escapeHtml(initials(q.symbol))}</div>
         <div class="tk-meta">
-          <div class="tk-symbol">${escapeHtml(q.symbol)}</div>
-          <div class="tk-name" title="${escapeHtml(q.name || "")}">${escapeHtml(q.name || "")}</div>
+          <div class="tk-symbol">${escapeHtml(q.symbol)}${score != null ? ` <span class="tk-score">${score}</span>` : ""}</div>
+          <div class="tk-name">${escapeHtml(q.name || "")}</div>
         </div>
         <div class="tk-quote">
           <div class="tk-price">${fmtPrice(q.price)}</div>
@@ -139,6 +228,28 @@ export function createWatchlist(container, config, ctx) {
     return "";
   }
 
+  async function rankIfStale() {
+    if (rankInFlight) return;
+    if (Date.now() - lastRankedAt < RANK_COOLDOWN_MS && ranking.length) return;
+    if (!lastQuotes.length) return;
+    rankInFlight = true;
+    badge.classList.add("loading");
+    try {
+      const prompt = buildRankPrompt(sector.name, sector.description, lastQuotes);
+      const res = await api.chat([{ role: "user", content: prompt }], RANK_SYSTEM);
+      const parsed = parseRanking(res.content);
+      ranking = parsed;
+      lastRankedAt = Date.now();
+      render();
+    } catch (e) {
+      console.warn(`Ranking failed for ${sector.name}:`, e.message);
+      // keep prior ranking if any; don't bump lastRankedAt so we'll try again next cycle
+    } finally {
+      rankInFlight = false;
+      badge.classList.remove("loading");
+    }
+  }
+
   let timer;
   const instance = {
     config,
@@ -148,8 +259,9 @@ export function createWatchlist(container, config, ctx) {
       try {
         const quotes = await api.getQuotes(sector.tickers);
         lastQuotes = quotes;
-        render(quotes);
+        render();
         ctx.notifyQuotesUpdated?.();
+        rankIfStale(); // fire-and-forget; render() called again when result arrives
       } catch (e) {
         listWrap.innerHTML = `<div class="empty">Quotes failed: ${escapeHtml(e.message)}</div>`;
       }

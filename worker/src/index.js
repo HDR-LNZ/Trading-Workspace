@@ -134,6 +134,11 @@ async function yahooQuotes(symbols) {
     postMarketChangePct: q.postMarketChangePercent ?? null,
     marketState: q.marketState || "REGULAR",
     marketCap: q.marketCap ?? null,
+    fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? null,
+    fiftyTwoWeekLow: q.fiftyTwoWeekLow ?? null,
+    fiftyDayAverage: q.fiftyDayAverage ?? null,
+    twoHundredDayAverage: q.twoHundredDayAverage ?? null,
+    averageDailyVolume3Month: q.averageDailyVolume3Month ?? null,
   }));
 }
 
@@ -251,7 +256,7 @@ async function handleChat(request, env) {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: system || "You are a helpful markets analyst.",
       messages,
     }),
