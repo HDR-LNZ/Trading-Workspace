@@ -473,7 +473,114 @@ export function createNews(container, config, ctx) {
   return instance;
 }
 
+/* ------------------------------------------------------------------ summary */
+
+const SUMMARY_SYSTEM = `You are a sharp markets analyst writing a permanent executive summary on a trader's dashboard. The dashboard tracks where institutional and government money is flowing, with a picks-and-shovels lens.
+
+Read the live sector watchlist data and produce 2-3 short paragraphs of plain prose (NO bullets, NO headers, NO markdown). Cover:
+1. Which sector is leading and which is lagging today, with concrete %.
+2. 2-3 specific tickers that exemplify the flow — frame as picks-and-shovels.
+3. Any rotation, weakness, or unusual divergence worth flagging.
+End with a single sentence on overall risk sentiment.
+
+Reference real tickers and real numbers. Be sharp. Avoid hedging language. Do NOT give financial advice — frame as analysis.`;
+
+function buildSummaryPrompt(quotes) {
+  const bySector = {};
+  for (const sector of Object.values(SECTORS)) {
+    const sectorQuotes = quotes.filter(q => sector.tickers.includes(q.symbol));
+    if (sectorQuotes.length) bySector[sector.name] = sectorQuotes;
+  }
+
+  const lines = [];
+  lines.push(`Date: ${new Date().toISOString().split("T")[0]}`);
+  lines.push(`Market state: ${quotes[0]?.marketState || "UNKNOWN"}`);
+  lines.push("");
+
+  for (const [name, qs] of Object.entries(bySector)) {
+    const avg = qs.reduce((s, q) => s + (q.changePct ?? 0), 0) / qs.length;
+    const up = qs.filter(q => (q.changePct ?? 0) > 0).length;
+    const down = qs.filter(q => (q.changePct ?? 0) < 0).length;
+    lines.push(`${name} — avg ${avg.toFixed(2)}% (${up} up / ${down} down)`);
+    for (const q of qs) {
+      const pct = q.changePct ?? 0;
+      lines.push(`  ${q.symbol} ${q.name || ""}: $${q.price?.toFixed(2)} ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`);
+    }
+    lines.push("");
+  }
+
+  const movers = [...quotes]
+    .filter(q => q.changePct != null && q.marketCap != null && q.marketCap >= 10e9)
+    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
+    .slice(0, 5);
+  lines.push(`Top large-cap movers (|%|, mc ≥ $10B):`);
+  for (const q of movers) {
+    lines.push(`  ${q.symbol} ${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}% (mc $${(q.marketCap / 1e9).toFixed(0)}B)`);
+  }
+
+  return lines.join("\n");
+}
+
+export function createSummary(container, config, ctx) {
+  const shell = paneShell({
+    title: "Money Flow Summary",
+    sub: "Live read on where capital is rotating across the watchlists. Refreshed every 5 min.",
+    sectorId: null,
+    onRefresh: () => instance.refresh(true),
+  });
+  container.appendChild(shell.wrap);
+  container.classList.add("summary-content");
+
+  const body = document.createElement("div");
+  body.className = "summary-body";
+  body.innerHTML = `<div class="summary-loading">Waiting for market data…</div>`;
+  shell.body.appendChild(body);
+
+  const COOLDOWN_MS = 5 * 60_000;
+  let lastGeneratedAt = 0;
+  let inFlight = false;
+  let timer;
+
+  async function generate(force = false) {
+    if (inFlight) return;
+    if (!force && Date.now() - lastGeneratedAt < COOLDOWN_MS) return;
+    const quotes = ctx.getAllQuotes?.() || [];
+    if (quotes.length < 5) return; // wait until enough watchlists have loaded
+    inFlight = true;
+    body.classList.add("loading");
+    try {
+      const prompt = buildSummaryPrompt(quotes);
+      const res = await api.chat([{ role: "user", content: prompt }], SUMMARY_SYSTEM);
+      const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      body.innerHTML = `
+        <div class="summary-text">${escapeHtml(res.content)}</div>
+        <div class="summary-meta">Generated ${time} · ${quotes.length} tickers across ${Object.keys(SECTORS).length} sectors</div>
+      `;
+      lastGeneratedAt = Date.now();
+    } catch (e) {
+      body.innerHTML = `<div class="empty">Summary failed: ${escapeHtml(e.message)}</div>`;
+    } finally {
+      body.classList.remove("loading");
+      inFlight = false;
+    }
+  }
+
+  const unsubscribe = ctx.onQuotesUpdated?.(() => {
+    if (!lastGeneratedAt) generate(); // first generation as soon as quotes arrive
+  });
+  timer = setInterval(() => generate(false), 60_000); // hourly check, gated by cooldown
+
+  const instance = {
+    config,
+    closeBtn: shell.closeBtn,
+    refresh: (force = true) => generate(force),
+    destroy() { clearInterval(timer); unsubscribe?.(); },
+  };
+  return instance;
+}
+
 export const WIDGET_FACTORIES = {
+  summary: createSummary,
   watchlist: createWatchlist,
   chart: createChart,
   news: createNews,

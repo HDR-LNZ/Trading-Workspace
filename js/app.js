@@ -11,25 +11,35 @@ const CHAT_KEY = (id) => `tw.chat.${id}`;
 
 function defaultLayout() {
   const widgets = [];
-  // Top row: 2 watchlists, chart, news
-  widgets.push({ id: "w-cm", type: "watchlist", config: { sectorId: "critical-minerals" }, x: 0, y: 0, w: 3, h: 8 });
-  widgets.push({ id: "w-def", type: "watchlist", config: { sectorId: "defense" }, x: 3, y: 0, w: 3, h: 8 });
-  widgets.push({ id: "w-chart", type: "chart", config: { symbol: "SPY", range: "1D", interval: "5m" }, x: 6, y: 0, w: 3, h: 8 });
-  widgets.push({ id: "w-news", type: "news", config: { symbol: "GENERAL" }, x: 9, y: 0, w: 3, h: 8 });
-  // Bottom row: 4 watchlists
-  widgets.push({ id: "w-ai", type: "watchlist", config: { sectorId: "ai-infra" }, x: 0, y: 8, w: 3, h: 6 });
-  widgets.push({ id: "w-nuc", type: "watchlist", config: { sectorId: "nuclear" }, x: 3, y: 8, w: 3, h: 6 });
-  widgets.push({ id: "w-eng", type: "watchlist", config: { sectorId: "energy" }, x: 6, y: 8, w: 3, h: 6 });
-  widgets.push({ id: "w-cyb", type: "watchlist", config: { sectorId: "cyber" }, x: 9, y: 8, w: 3, h: 6 });
+  // Permanent banner: AI-generated executive summary across all watchlists
+  widgets.push({ id: "w-summary", type: "summary", config: {}, x: 0, y: 0, w: 12, h: 4 });
+  // Row 1: 2 watchlists, chart, news
+  widgets.push({ id: "w-cm", type: "watchlist", config: { sectorId: "critical-minerals" }, x: 0, y: 4, w: 3, h: 8 });
+  widgets.push({ id: "w-def", type: "watchlist", config: { sectorId: "defense" }, x: 3, y: 4, w: 3, h: 8 });
+  widgets.push({ id: "w-chart", type: "chart", config: { symbol: "SPY", range: "1D", interval: "5m" }, x: 6, y: 4, w: 3, h: 8 });
+  widgets.push({ id: "w-news", type: "news", config: { symbol: "GENERAL" }, x: 9, y: 4, w: 3, h: 8 });
+  // Row 2: 4 watchlists
+  widgets.push({ id: "w-ai", type: "watchlist", config: { sectorId: "ai-infra" }, x: 0, y: 12, w: 3, h: 6 });
+  widgets.push({ id: "w-nuc", type: "watchlist", config: { sectorId: "nuclear" }, x: 3, y: 12, w: 3, h: 6 });
+  widgets.push({ id: "w-eng", type: "watchlist", config: { sectorId: "energy" }, x: 6, y: 12, w: 3, h: 6 });
+  widgets.push({ id: "w-cyb", type: "watchlist", config: { sectorId: "cyber" }, x: 9, y: 12, w: 3, h: 6 });
   return widgets;
 }
 
 function loadLayout() {
+  let items;
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) items = JSON.parse(raw);
   } catch {}
-  return defaultLayout();
+  if (!items) return defaultLayout();
+  // Migration: if user's saved layout has no summary widget, prepend one
+  // and shift everything down by 4 rows.
+  if (!items.find(i => i.type === "summary")) {
+    items = items.map(i => ({ ...i, y: (i.y || 0) + 4 }));
+    items.unshift({ id: "w-summary", type: "summary", config: {}, x: 0, y: 0, w: 12, h: 4 });
+  }
+  return items;
 }
 
 function persistLayout() {
@@ -153,6 +163,12 @@ function showAddOptions(type) {
   const opts = document.getElementById("modal-options");
   opts.hidden = false;
   opts.innerHTML = "";
+  if (type === "summary") {
+    addWidget({ type: "summary", config: {}, x: 0, y: 0, w: 12, h: 4 });
+    persistLayout();
+    document.getElementById("add-widget-modal").hidden = true;
+    return;
+  }
   if (type === "watchlist") {
     const select = document.createElement("div");
     select.innerHTML = `
