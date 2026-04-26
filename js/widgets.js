@@ -303,12 +303,26 @@ export function createChart(container, config, ctx) {
 
   const toolbar = document.createElement("div");
   toolbar.className = "chart-toolbar";
+  const RANGE_LABELS = {
+    "1D": { interval: "5m", title: "1 day, 5-minute bars" },
+    "1W": { interval: "30m", title: "1 week, 30-minute bars" },
+    "1M": { interval: "1h", title: "1 month, hourly bars" },
+    "3M": { interval: "1d", title: "3 months, daily bars" },
+    "6M": { interval: "1d", title: "6 months, daily bars" },
+    "1Y": { interval: "1d", title: "1 year, daily bars" },
+    "2Y": { interval: "1d", title: "2 years, daily bars" },
+  };
+  const intervalLabel = (r) => {
+    const i = RANGE_LABELS[r]?.interval || "1d";
+    return { "5m": "5m bars", "30m": "30m bars", "1h": "Hourly bars", "1d": "Daily bars" }[i] || `${i} bars`;
+  };
   toolbar.innerHTML = `
-    <button class="auto-pill ${auto ? "active" : ""}" data-auto title="Auto-pick biggest mover from watchlists (market cap ≥ $10B)">AUTO</button>
+    <button class="auto-pill ${auto ? "active" : ""}" data-auto title="Auto-pick the biggest %-mover from watchlists (market cap ≥ $10B). Re-checks every ~20s when any watchlist refreshes; chart re-fetches candles every 30s.">AUTO</button>
     <input type="text" class="chart-symbol-input" value="${symbol}" />
     <div class="range-pills">
-      ${["1D", "1W", "1M", "3M", "6M", "1Y", "2Y"].map(r => `<button class="range-pill ${r === range ? "active" : ""}" data-range="${r}">${r}</button>`).join("")}
+      ${["1D", "1W", "1M", "3M", "6M", "1Y", "2Y"].map(r => `<button class="range-pill ${r === range ? "active" : ""}" data-range="${r}" title="${RANGE_LABELS[r].title}">${r}</button>`).join("")}
     </div>
+    <span class="interval-label" title="Each candle on the chart represents this duration">${intervalLabel(range)}</span>
     <div class="chart-price-block">
       <span class="chart-price">—</span>
       <span class="chart-change">—</span>
@@ -374,6 +388,8 @@ export function createChart(container, config, ctx) {
       range = btn.dataset.range;
       interval = rangeToInterval(range);
       stats.querySelector('[data-stat="range"]').textContent = `${range} · ${interval}`;
+      const intervalLabelEl = toolbar.querySelector(".interval-label");
+      if (intervalLabelEl) intervalLabelEl.textContent = intervalLabel(range);
       config.range = range; config.interval = interval;
       ctx.persistLayout?.();
       instance.refresh();

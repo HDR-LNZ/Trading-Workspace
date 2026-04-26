@@ -301,6 +301,14 @@ main {
   border-color: var(--border-strong);
   color: var(--text);
 }
+.interval-label {
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+}
 
 .chart-container { flex: 1; min-height: 0; position: relative; }
 .chart-stats {
