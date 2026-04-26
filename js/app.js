@@ -350,6 +350,21 @@ function updateMarketStatus() {
 updateMarketStatus();
 setInterval(updateMarketStatus, 60_000);
 
+/* ------------------------------------------------ refresh on tab focus */
+// Browsers throttle setInterval in background tabs (down to 1/min or paused).
+// When the user returns, immediately refresh every widget so quotes are current.
+let lastFocusRefresh = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  // Throttle: don't blast a full refresh more than once every 5s on rapid tab switching.
+  if (Date.now() - lastFocusRefresh < 5_000) return;
+  lastFocusRefresh = Date.now();
+  for (const [, { api: w }] of instances) {
+    try { w.refresh?.(); } catch {}
+  }
+  updateMarketStatus();
+});
+
 /* ------------------------------------------------ register service worker */
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

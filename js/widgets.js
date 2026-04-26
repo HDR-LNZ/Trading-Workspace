@@ -50,7 +50,14 @@ function paneShell({ title, sub, sectorId, onChat, onRefresh }) {
     refreshBtn.className = "btn-icon";
     refreshBtn.title = "Refresh";
     refreshBtn.textContent = "↻";
-    refreshBtn.addEventListener("click", (e) => { e.stopPropagation(); onRefresh(); });
+    refreshBtn.addEventListener("mousedown", (e) => e.stopPropagation()); // don't let GridStack steal the click
+    refreshBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (refreshBtn.classList.contains("refreshing")) return;
+      refreshBtn.classList.add("refreshing");
+      try { await onRefresh(); } catch {}
+      finally { setTimeout(() => refreshBtn.classList.remove("refreshing"), 400); }
+    });
     actions.appendChild(refreshBtn);
   }
   const closeBtn = document.createElement("button");
@@ -153,7 +160,7 @@ export function createWatchlist(container, config, ctx) {
     sub: sector.description,
     sectorId: config.sectorId,
     onChat: () => ctx.openChat({ kind: "sector", sectorId: config.sectorId, quotes: lastQuotes }),
-    onRefresh: () => { lastRankedAt = 0; instance.refresh(); }, // manual refresh forces re-rank
+    onRefresh: () => { lastRankedAt = 0; return instance.refresh(); }, // manual refresh forces re-rank
   });
   container.appendChild(shell.wrap);
   // Subtle "AI-ranked" badge in the header, before the action buttons

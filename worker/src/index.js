@@ -67,7 +67,11 @@ function corsHeaders(request, env) {
 function json(body, status, request, env) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders(request, env) },
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...corsHeaders(request, env),
+    },
   });
 }
 
