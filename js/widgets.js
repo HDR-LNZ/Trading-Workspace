@@ -333,6 +333,14 @@ export function createChart(container, config, ctx) {
 
   const chartContainer = document.createElement("div");
   chartContainer.className = "chart-container";
+  // Prevent GridStack from hijacking pointer drags on the chart — Lightweight
+  // Charts' canvases are inside this container, they get the event first
+  // (their listeners are deeper in the DOM), then we stop it from bubbling up
+  // to GridStack so the widget doesn't move.
+  ["mousedown", "pointerdown"].forEach(t =>
+    chartContainer.addEventListener(t, e => e.stopPropagation())
+  );
+  chartContainer.addEventListener("touchstart", e => e.stopPropagation(), { passive: true });
   pane.appendChild(chartContainer);
 
   const stats = document.createElement("div");
