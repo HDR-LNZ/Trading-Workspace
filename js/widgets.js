@@ -525,15 +525,33 @@ export function createChart(container, config, ctx) {
 
 /* ------------------------------------------------------------------ news */
 
+const NEWS_PRESETS = [
+  { value: "GENERAL", label: "Market" },
+  { value: "FOREX", label: "Forex" },
+  { value: "CRYPTO", label: "Crypto" },
+  { value: "MERGER", label: "Mergers" },
+];
+
 export function createNews(container, config, ctx) {
-  const symbol = (config.symbol || "GENERAL").toUpperCase();
+  let symbol = (config.symbol || "GENERAL").toUpperCase();
 
   const shell = paneShell({
-    title: symbol === "GENERAL" ? "Market News" : `News: ${symbol}`,
+    title: "News",
     sectorId: null,
     onRefresh: () => instance.refresh(),
   });
   container.appendChild(shell.wrap);
+
+  // Editable source picker in the body header (preset pills + ticker input)
+  const picker = document.createElement("div");
+  picker.className = "news-picker";
+  picker.innerHTML = `
+    <div class="news-presets">
+      ${NEWS_PRESETS.map(p => `<button class="news-preset ${p.value === symbol ? "active" : ""}" data-preset="${p.value}">${p.label}</button>`).join("")}
+    </div>
+    <input type="text" class="news-ticker-input" placeholder="ticker" value="${NEWS_PRESETS.find(p => p.value === symbol) ? "" : symbol}" />
+  `;
+  shell.body.appendChild(picker);
 
   const list = document.createElement("div");
   list.className = "news-list";
@@ -546,6 +564,28 @@ export function createNews(container, config, ctx) {
     list.appendChild(sk);
   }
 
+  function setSource(next) {
+    next = (next || "GENERAL").trim().toUpperCase();
+    if (!next || next === symbol) return;
+    symbol = next;
+    config.symbol = symbol;
+    picker.querySelectorAll(".news-preset").forEach(b => b.classList.toggle("active", b.dataset.preset === symbol));
+    const tickerInput = picker.querySelector(".news-ticker-input");
+    if (NEWS_PRESETS.find(p => p.value === symbol)) tickerInput.value = "";
+    else tickerInput.value = symbol;
+    ctx.persistLayout?.();
+    instance.refresh();
+  }
+
+  picker.querySelectorAll(".news-preset").forEach(btn => {
+    btn.addEventListener("click", () => setSource(btn.dataset.preset));
+  });
+  const tickerInput = picker.querySelector(".news-ticker-input");
+  tickerInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); setSource(tickerInput.value); tickerInput.blur(); }
+  });
+  tickerInput.addEventListener("change", () => setSource(tickerInput.value));
+
   let timer;
   const instance = {
     config,
@@ -555,7 +595,7 @@ export function createNews(container, config, ctx) {
         const items = await api.getNews(symbol, 12);
         list.innerHTML = "";
         if (!items.length) {
-          list.innerHTML = `<div class="empty">No recent headlines.</div>`;
+          list.innerHTML = `<div class="empty">No recent headlines for <strong>${escapeHtml(symbol)}</strong>. Try a category above (Market / Forex / Crypto / Mergers) or a ticker like NVDA.</div>`;
           return;
         }
         for (const it of items) {

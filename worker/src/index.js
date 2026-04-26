@@ -203,23 +203,44 @@ async function handleCandles(url, env) {
 
 /* -------------------------------------------------------- news */
 
+// Map of category aliases. Anything that isn't a clean ticker (1-6 uppercase letters)
+// falls back to "general" so user-typed labels like "BREAKING NEWS" don't return empty.
+const NEWS_ALIASES = {
+  GENERAL: "general", MARKET: "general", TOP: "general", ALL: "general",
+  BREAKING: "general", "BREAKING NEWS": "general", BREAKING_NEWS: "general",
+  HEADLINES: "general", NEWS: "general",
+  FOREX: "forex", FX: "forex",
+  CRYPTO: "crypto", CRYPTOCURRENCY: "crypto",
+  MERGER: "merger", MERGERS: "merger", "M&A": "merger", DEALS: "merger",
+};
+
 async function handleNews(url, env) {
-  const symbol = url.searchParams.get("symbol") || "GENERAL";
+  const raw_symbol = (url.searchParams.get("symbol") || "GENERAL").trim().toUpperCase();
   const limit = parseInt(url.searchParams.get("limit") || "12", 10);
   if (!env.FINNHUB_KEY) throw new Error("FINNHUB_KEY not set");
 
+  // Decide: category lookup vs ticker company-news
+  let category = NEWS_ALIASES[raw_symbol];
+  if (!category && !/^[A-Z.\-]{1,6}$/.test(raw_symbol)) category = "general";
+
   let raw;
-  if (symbol === "GENERAL") {
-    const r = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${env.FINNHUB_KEY}`);
+  let upstreamStatus;
+  if (category) {
+    const r = await fetch(`https://finnhub.io/api/v1/news?category=${category}&token=${env.FINNHUB_KEY}`);
+    upstreamStatus = r.status;
     raw = await r.json();
   } else {
     const to = new Date();
     const from = new Date(to.getTime() - 14 * 86400 * 1000);
     const fmt = (d) => d.toISOString().split("T")[0];
-    const r = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${fmt(from)}&to=${fmt(to)}&token=${env.FINNHUB_KEY}`);
+    const r = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${raw_symbol}&from=${fmt(from)}&to=${fmt(to)}&token=${env.FINNHUB_KEY}`);
+    upstreamStatus = r.status;
     raw = await r.json();
   }
-  if (!Array.isArray(raw)) raw = [];
+  if (!Array.isArray(raw)) {
+    // Surface Finnhub's error so we can see auth/rate-limit/quota issues.
+    throw new Error(`Finnhub ${upstreamStatus}: ${JSON.stringify(raw).slice(0, 200)}`);
+  }
   return raw.slice(0, limit).map((n) => ({
     id: String(n.id),
     headline: n.headline,
@@ -229,7 +250,7 @@ async function handleNews(url, env) {
     image: n.image || "",
     publishedAt: (n.datetime || 0) * 1000,
     sentiment: classifySentiment(n.headline),
-    related: n.related || symbol,
+    related: n.related || raw_symbol,
   }));
 }
 
