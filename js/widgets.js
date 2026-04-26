@@ -156,7 +156,7 @@ export function createWatchlist(container, config, ctx) {
   };
 
   instance.refresh();
-  timer = setInterval(() => instance.refresh(), 30_000);
+  timer = setInterval(() => instance.refresh(), 20_000);
   return instance;
 }
 
@@ -213,12 +213,19 @@ export function createChart(container, config, ctx) {
   shell.body.appendChild(pane);
 
   const symbolInput = toolbar.querySelector(".chart-symbol-input");
-  symbolInput.addEventListener("change", () => {
-    symbol = symbolInput.value.trim().toUpperCase() || "SPY";
+  symbolInput.title = "Type ticker, press Enter";
+  function applySymbol() {
+    const next = (symbolInput.value || "").trim().toUpperCase();
+    if (!next || next === symbol) { symbolInput.value = symbol; return; }
+    symbol = next;
     symbolInput.value = symbol;
     config.symbol = symbol;
     ctx.persistLayout?.();
     instance.refresh();
+  }
+  symbolInput.addEventListener("change", applySymbol);
+  symbolInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); applySymbol(); symbolInput.blur(); }
   });
   toolbar.querySelectorAll(".range-pill").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -285,27 +292,34 @@ export function createChart(container, config, ctx) {
     async refresh() {
       try {
         if (!chart) buildChart();
-        const { candles } = await api.getCandles(symbol, range.toLowerCase().replace("y", "y").replace("m", "mo").replace("w", "5d").replace("d", "d"), interval);
-        // map ranges: 1D->1d, 1W->5d, 1M->1mo, etc.
-        const yahooRange = mapRange(range);
-        const data = await api.getCandles(symbol, yahooRange, interval);
+        const data = await api.getCandles(symbol, mapRange(range), interval);
         const series = data.candles;
+        if (!series?.length) {
+          toolbar.querySelector(".chart-price").textContent = "No data";
+          return;
+        }
         candleSeries.setData(series.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
         volumeSeries.setData(series.map(c => ({ time: c.time, value: c.volume, color: c.close >= c.open ? "rgba(46,224,122,0.4)" : "rgba(255,77,122,0.4)" })));
-        const last = series[series.length - 1];
-        const first = series[0];
-        const net = last.close - first.open;
-        const netPct = (net / first.open) * 100;
-        toolbar.querySelector(".chart-price").textContent = fmtPrice(last.close);
+
+        // Session stats — aggregate over the visible range, not just the last candle.
+        const sessionOpen = series[0].open;
+        const sessionHigh = series.reduce((m, c) => Math.max(m, c.high), -Infinity);
+        const sessionLow = series.reduce((m, c) => Math.min(m, c.low), Infinity);
+        const sessionClose = series[series.length - 1].close;
+        const sessionVolume = series.reduce((s, c) => s + (c.volume || 0), 0);
+        const net = sessionClose - sessionOpen;
+        const netPct = (net / sessionOpen) * 100;
+
+        toolbar.querySelector(".chart-price").textContent = fmtPrice(sessionClose);
         const ch = toolbar.querySelector(".chart-change");
         ch.textContent = `${fmtChange(net)} (${fmtPct(netPct)})`;
         ch.className = `chart-change ${upDown(net)}`;
-        stats.querySelector('[data-stat="open"]').textContent = fmtPrice(last.open);
-        stats.querySelector('[data-stat="high"]').textContent = fmtPrice(last.high);
-        stats.querySelector('[data-stat="low"]').textContent = fmtPrice(last.low);
-        stats.querySelector('[data-stat="close"]').textContent = fmtPrice(last.close);
-        stats.querySelector('[data-stat="volume"]').textContent = last.volume?.toLocaleString() || "—";
-        stats.querySelector('[data-stat="prev"]').textContent = fmtPrice(first.open);
+        stats.querySelector('[data-stat="open"]').textContent = fmtPrice(sessionOpen);
+        stats.querySelector('[data-stat="high"]').textContent = fmtPrice(sessionHigh);
+        stats.querySelector('[data-stat="low"]').textContent = fmtPrice(sessionLow);
+        stats.querySelector('[data-stat="close"]').textContent = fmtPrice(sessionClose);
+        stats.querySelector('[data-stat="volume"]').textContent = sessionVolume.toLocaleString();
+        stats.querySelector('[data-stat="prev"]').textContent = fmtPrice(sessionOpen);
         const netEl = stats.querySelector('[data-stat="net"]');
         netEl.textContent = fmtPct(netPct);
         netEl.style.color = net >= 0 ? "var(--green)" : "var(--red)";
@@ -324,7 +338,7 @@ export function createChart(container, config, ctx) {
 
   // initial build deferred until container has size
   setTimeout(() => { buildChart(); instance.refresh(); }, 50);
-  timer = setInterval(() => instance.refresh(), 60_000);
+  timer = setInterval(() => instance.refresh(), 30_000);
   return instance;
 }
 
@@ -393,7 +407,7 @@ export function createNews(container, config, ctx) {
   };
 
   instance.refresh();
-  timer = setInterval(() => instance.refresh(), 5 * 60_000);
+  timer = setInterval(() => instance.refresh(), 2 * 60_000);
   return instance;
 }
 
