@@ -190,22 +190,20 @@ export const SECTORS = {
       "SBAC",  // SBA Communications — towers
     ],
   },
-  software: {
-    name: "Software",
+  "ai-data-infra": {
+    name: "AI Software & Data Infra",
     color: "#5be0c4",
     description:
-      "Enterprise software platforms monetizing AI — agents, copilots, workflow automation, data infra. Where the AI capex cycle ultimately turns into revenue. Includes PLTR for government and commercial AI ops exposure.",
+      "The supply side of enterprise AI: cloud platforms hosting workloads, data warehouses storing the training data, observability for the GPUs, and the gov-grade AI ops layer. Excludes end-product SaaS (CRM, productivity) — these names sell the shovels, not consume them.",
     tickers: [
-      "MSFT",  // Microsoft — Azure + Copilot mega-cap
-      "ORCL",  // Oracle — cloud + AI infra deals (OpenAI capacity)
+      "MSFT",  // Microsoft — Azure (largest AI cloud, OpenAI capacity)
+      "ORCL",  // Oracle — cloud + multi-billion OpenAI capacity deals
       "PLTR",  // Palantir — gov + commercial AI ops platform
-      "CRM",   // Salesforce — Agentforce / Data Cloud
-      "NOW",   // ServiceNow — enterprise workflow + AI
-      "ADBE",  // Adobe — creative AI (Firefly)
-      "SNOW",  // Snowflake — data cloud / AI
-      "DDOG",  // Datadog — observability
+      "SNOW",  // Snowflake — data cloud / AI training data
+      "DDOG",  // Datadog — observability for AI workloads
       "MDB",   // MongoDB — modern data infra
-      "INTU",  // Intuit — vertical AI applications
+      "CFLT",  // Confluent — event streaming (Kafka)
+      "ESTC",  // Elastic — search + observability
     ],
   },
 };
