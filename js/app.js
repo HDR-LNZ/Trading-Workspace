@@ -71,6 +71,18 @@ const grid = GridStack.init({
   animate: true,
 }, gridEl);
 
+// On mobile (≤720px) make the grid static so drag/resize don't hijack touch.
+// CSS overrides absolute positioning to a vertical stack; setStatic prevents
+// GridStack from intercepting touch events on .pane-header.
+const mobileQuery = window.matchMedia("(max-width: 720px)");
+function applyResponsiveMode() {
+  const isMobile = mobileQuery.matches;
+  document.body.classList.toggle("is-mobile", isMobile);
+  grid.setStatic(isMobile);
+}
+applyResponsiveMode();
+mobileQuery.addEventListener("change", applyResponsiveMode);
+
 const instances = new Map(); // id -> { type, api: widgetInstance }
 const quoteSubscribers = new Set();
 const ctx = {

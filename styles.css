@@ -576,8 +576,69 @@ main {
   border-radius: var(--radius);
 }
 
-/* responsive */
+/* ---- mobile / narrow screens ---- */
 @media (max-width: 720px) {
-  .chat-overlay { width: calc(100vw - 24px); right: 12px; left: 12px; }
+  body { overflow: auto; }
+  main {
+    height: auto;
+    min-height: calc(100vh - 52px);
+    overflow: visible;
+    padding: 8px;
+  }
+  /* Override GridStack absolute positioning — let widgets flow vertically */
+  .grid-stack {
+    height: auto !important;
+    position: relative !important;
+    min-height: 0 !important;
+  }
+  .grid-stack > .grid-stack-item {
+    position: relative !important;
+    transform: none !important;
+    left: 0 !important;
+    top: auto !important;
+    right: auto !important;
+    width: 100% !important;
+    min-height: 380px;
+    height: 380px !important;
+    margin: 0 0 10px 0;
+  }
+  .grid-stack > .grid-stack-item > .grid-stack-item-content {
+    position: relative !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  /* Summary pane: variable, content-driven height (text can be long) */
+  .grid-stack > .grid-stack-item:has(.summary-content) {
+    height: auto !important;
+    min-height: 220px;
+  }
+  .summary-content {
+    height: auto !important;
+  }
+  .summary-body { max-height: 380px; overflow: auto; }
+
+  /* Drag handles disabled on mobile — pane-header reverts to default cursor so
+     it's clear it's not draggable, and tap targets feel native. */
+  .pane-header { cursor: default; }
+
+  /* Chart toolbar wraps cleanly on narrow widths */
+  .chart-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+  .chart-price-block { margin-left: 0; width: 100%; justify-content: space-between; }
+  .range-pills { flex-wrap: wrap; }
+  .interval-label { border-left: 0; padding-left: 0; }
+
+  /* News picker compact */
+  .news-picker { padding: 6px 8px; gap: 4px; }
+  .news-ticker-input { width: 60px; }
+
+  /* Topbar */
+  .topbar { padding: 8px 12px; height: 48px; }
+  .brand-name { font-size: 13px; }
+  .brand-status { display: none; }
   .topbar-actions .btn-ghost { display: none; }
+
+  /* Chat overlay full-width */
+  .chat-overlay { width: calc(100vw - 24px); right: 12px; left: 12px; top: 56px; }
 }
+
