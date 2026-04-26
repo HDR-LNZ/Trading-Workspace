@@ -143,11 +143,13 @@ export function createWatchlist(container, config, ctx) {
   const instance = {
     config,
     closeBtn: shell.closeBtn,
+    getQuotes: () => lastQuotes,
     async refresh() {
       try {
         const quotes = await api.getQuotes(sector.tickers);
         lastQuotes = quotes;
         render(quotes);
+        ctx.notifyQuotesUpdated?.();
       } catch (e) {
         listWrap.innerHTML = `<div class="empty">Quotes failed: ${escapeHtml(e.message)}</div>`;
       }
@@ -166,6 +168,8 @@ export function createChart(container, config, ctx) {
   let symbol = (config.symbol || "SPY").toUpperCase();
   let range = config.range || "1D";
   let interval = config.interval || "5m";
+  let auto = config.auto !== false; // default ON — picks biggest mover from watchlists
+  const MIN_MARKET_CAP = 10e9; // exclude small/meme caps
   let chart, candleSeries, volumeSeries;
 
   const shell = paneShell({
@@ -181,6 +185,7 @@ export function createChart(container, config, ctx) {
   const toolbar = document.createElement("div");
   toolbar.className = "chart-toolbar";
   toolbar.innerHTML = `
+    <button class="auto-pill ${auto ? "active" : ""}" data-auto title="Auto-pick biggest mover from watchlists (market cap ≥ $10B)">AUTO</button>
     <input type="text" class="chart-symbol-input" value="${symbol}" />
     <div class="range-pills">
       ${["1D", "1W", "1M", "3M", "6M", "1Y", "2Y"].map(r => `<button class="range-pill ${r === range ? "active" : ""}" data-range="${r}">${r}</button>`).join("")}
@@ -213,20 +218,36 @@ export function createChart(container, config, ctx) {
   shell.body.appendChild(pane);
 
   const symbolInput = toolbar.querySelector(".chart-symbol-input");
-  symbolInput.title = "Type ticker, press Enter";
+  const autoBtn = toolbar.querySelector(".auto-pill");
+  symbolInput.title = "Type ticker, press Enter (turns AUTO off)";
+
+  function setAuto(on) {
+    auto = on;
+    autoBtn.classList.toggle("active", auto);
+    config.auto = auto;
+    symbolInput.disabled = false;
+    symbolInput.style.opacity = auto ? "0.6" : "1";
+    ctx.persistLayout?.();
+  }
+
   function applySymbol() {
     const next = (symbolInput.value || "").trim().toUpperCase();
     if (!next || next === symbol) { symbolInput.value = symbol; return; }
     symbol = next;
     symbolInput.value = symbol;
     config.symbol = symbol;
-    ctx.persistLayout?.();
+    setAuto(false); // manual override
     instance.refresh();
   }
   symbolInput.addEventListener("change", applySymbol);
   symbolInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); applySymbol(); symbolInput.blur(); }
   });
+  autoBtn.addEventListener("click", () => {
+    setAuto(!auto);
+    if (auto) instance.refresh();
+  });
+  setAuto(auto); // apply initial styling
   toolbar.querySelectorAll(".range-pill").forEach(btn => {
     btn.addEventListener("click", () => {
       toolbar.querySelectorAll(".range-pill").forEach(b => b.classList.remove("active"));
@@ -292,6 +313,15 @@ export function createChart(container, config, ctx) {
     async refresh() {
       try {
         if (!chart) buildChart();
+        if (auto) {
+          const picked = pickBiggestMover();
+          if (picked && picked !== symbol) {
+            symbol = picked;
+            symbolInput.value = symbol;
+            config.symbol = symbol;
+            ctx.persistLayout?.();
+          }
+        }
         const data = await api.getCandles(symbol, mapRange(range), interval);
         const series = data.candles;
         if (!series?.length) {
@@ -310,10 +340,16 @@ export function createChart(container, config, ctx) {
         const net = sessionClose - sessionOpen;
         const netPct = (net / sessionOpen) * 100;
 
-        toolbar.querySelector(".chart-price").textContent = fmtPrice(sessionClose);
+        // Header price/change reflects day-over-day (matches what watchlists show).
+        // Session stats below reflect the displayed range's intraday OHLCV.
+        const dayQuote = ctx.getAllQuotes?.().find(q => q.symbol === symbol);
+        const headerPrice = dayQuote?.price ?? sessionClose;
+        const headerChange = dayQuote?.change ?? net;
+        const headerPct = dayQuote?.changePct ?? netPct;
+        toolbar.querySelector(".chart-price").textContent = fmtPrice(headerPrice);
         const ch = toolbar.querySelector(".chart-change");
-        ch.textContent = `${fmtChange(net)} (${fmtPct(netPct)})`;
-        ch.className = `chart-change ${upDown(net)}`;
+        ch.textContent = `${fmtChange(headerChange)} (${fmtPct(headerPct)})`;
+        ch.className = `chart-change ${upDown(headerChange)}`;
         stats.querySelector('[data-stat="open"]').textContent = fmtPrice(sessionOpen);
         stats.querySelector('[data-stat="high"]').textContent = fmtPrice(sessionHigh);
         stats.querySelector('[data-stat="low"]').textContent = fmtPrice(sessionLow);
@@ -336,9 +372,35 @@ export function createChart(container, config, ctx) {
     return { "1D": "1d", "1W": "5d", "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y", "2Y": "2y" }[r] || "1d";
   }
 
+  function pickBiggestMover() {
+    const all = ctx.getAllQuotes?.() || [];
+    const eligible = all.filter(q =>
+      q.changePct != null && q.marketCap != null && q.marketCap >= MIN_MARKET_CAP
+    );
+    if (!eligible.length) return null;
+    eligible.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+    return eligible[0].symbol;
+  }
+
+  // Re-pick symbol whenever a watchlist publishes new quotes.
+  // Only refetches candles if the picked symbol actually changed (cheap no-op otherwise).
+  const unsubscribe = ctx.onQuotesUpdated?.(() => {
+    if (!auto) return;
+    const picked = pickBiggestMover();
+    if (picked && picked !== symbol) {
+      symbol = picked;
+      symbolInput.value = symbol;
+      config.symbol = symbol;
+      ctx.persistLayout?.();
+      instance.refresh();
+    }
+  });
+
   // initial build deferred until container has size
   setTimeout(() => { buildChart(); instance.refresh(); }, 50);
   timer = setInterval(() => instance.refresh(), 30_000);
+  const baseDestroy = instance.destroy;
+  instance.destroy = () => { unsubscribe?.(); baseDestroy(); };
   return instance;
 }
 

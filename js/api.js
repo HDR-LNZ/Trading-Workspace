@@ -126,6 +126,7 @@ function mockQuotes(symbols) {
       postMarketPrice: null,
       postMarketChangePct: null,
       marketState: "REGULAR",
+      marketCap: Math.round((1 + seeded(sym, 13)) * 50e9),
     };
   });
 }

@@ -133,6 +133,7 @@ async function yahooQuotes(symbols) {
     postMarketPrice: q.postMarketPrice ?? null,
     postMarketChangePct: q.postMarketChangePercent ?? null,
     marketState: q.marketState || "REGULAR",
+    marketCap: q.marketCap ?? null,
   }));
 }
 
@@ -155,6 +156,7 @@ async function finnhubQuotes(symbols, env) {
       postMarketPrice: null,
       postMarketChangePct: null,
       marketState: "REGULAR",
+      marketCap: profile.marketCapitalization ? profile.marketCapitalization * 1e6 : null,
     };
   }));
   return results;

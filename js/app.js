@@ -62,9 +62,23 @@ const grid = GridStack.init({
 }, gridEl);
 
 const instances = new Map(); // id -> { type, api: widgetInstance }
+const quoteSubscribers = new Set();
 const ctx = {
   openChat,
   persistLayout,
+  getAllQuotes() {
+    const seen = new Map();
+    for (const [, { type, api: w }] of instances) {
+      if (type !== "watchlist") continue;
+      const quotes = w.getQuotes?.() || [];
+      for (const q of quotes) {
+        if (q?.symbol && !seen.has(q.symbol)) seen.set(q.symbol, q);
+      }
+    }
+    return [...seen.values()];
+  },
+  onQuotesUpdated(fn) { quoteSubscribers.add(fn); return () => quoteSubscribers.delete(fn); },
+  notifyQuotesUpdated() { for (const fn of quoteSubscribers) try { fn(); } catch {} },
 };
 
 function addWidget(item) {

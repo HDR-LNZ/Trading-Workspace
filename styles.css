@@ -228,6 +228,25 @@ main {
   text-transform: uppercase;
   font-weight: 600;
 }
+.auto-pill {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.auto-pill:hover { color: var(--text); }
+.auto-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1300;
+  box-shadow: 0 0 8px rgba(255, 216, 77, 0.4);
+}
 .chart-price-block { display: flex; align-items: baseline; gap: 8px; margin-left: auto; }
 .chart-price { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .chart-change { font-size: 12px; font-variant-numeric: tabular-nums; }
