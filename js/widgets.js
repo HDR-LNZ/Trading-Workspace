@@ -542,11 +542,14 @@ export function createChart(container, config, ctx) {
 /* ------------------------------------------------------------------ news */
 
 const NEWS_PRESETS = [
+  { value: "BREAKING", label: "Breaking" },
   { value: "GENERAL", label: "Market" },
   { value: "FOREX", label: "Forex" },
   { value: "CRYPTO", label: "Crypto" },
   { value: "MERGER", label: "Mergers" },
 ];
+const BREAKING_WINDOW_MS = 4 * 60 * 60 * 1000; // headlines from last 4 hours
+const NEW_BADGE_WINDOW_MS = 60 * 60 * 1000;   // "NEW" badge on items < 1 hour old
 
 export function createNews(container, config, ctx) {
   let symbol = (config.symbol || "GENERAL").toUpperCase();
@@ -608,21 +611,32 @@ export function createNews(container, config, ctx) {
     closeBtn: shell.closeBtn,
     async refresh() {
       try {
-        const items = await api.getNews(symbol, 12);
+        let items = await api.getNews(symbol, 20);
+        // Breaking mode: only items from the last 4 hours
+        if (symbol === "BREAKING") {
+          const cutoff = Date.now() - BREAKING_WINDOW_MS;
+          items = items.filter(it => it.publishedAt > cutoff);
+        }
         list.innerHTML = "";
         if (!items.length) {
-          list.innerHTML = `<div class="empty">No recent headlines for <strong>${escapeHtml(symbol)}</strong>. Try a category above (Market / Forex / Crypto / Mergers) or a ticker like NVDA.</div>`;
+          const msg = symbol === "BREAKING"
+            ? `No breaking headlines in the last 4 hours. Markets may be quiet — try <strong>Market</strong> for the broader feed.`
+            : `No recent headlines for <strong>${escapeHtml(symbol)}</strong>. Try a category above (Breaking / Market / Forex / Crypto / Mergers) or a ticker like NVDA.`;
+          list.innerHTML = `<div class="empty">${msg}</div>`;
           return;
         }
+        const now = Date.now();
         for (const it of items) {
           const div = document.createElement("div");
           div.className = "news-item";
           const date = new Date(it.publishedAt);
+          const ageMs = now - it.publishedAt;
+          const isNew = ageMs >= 0 && ageMs < NEW_BADGE_WINDOW_MS;
           const dateStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " · " +
             date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
           div.innerHTML = `
             <div>
-              <div class="news-headline">${escapeHtml(it.headline)}</div>
+              <div class="news-headline">${isNew ? `<span class="news-new-badge">NEW</span>` : ""}${escapeHtml(it.headline)}</div>
               <div class="news-meta">
                 ${it.sentiment ? `<span class="news-sentiment ${it.sentiment}">${it.sentiment === "positive" ? "↗ Positive" : it.sentiment === "negative" ? "↘ Negative" : "Neutral"}</span>` : ""}
                 <span class="news-source">${escapeHtml(it.source || "")}</span>
