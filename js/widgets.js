@@ -650,15 +650,25 @@ export function createNews(container, config, ctx) {
 
 /* ------------------------------------------------------------------ summary */
 
-const SUMMARY_SYSTEM = `You are a sharp markets analyst writing a permanent executive summary on a trader's dashboard. The dashboard tracks where institutional and government money is flowing, with a picks-and-shovels lens.
+const SUMMARY_SYSTEM = `You are analyzing live US equity sector data on a trading dashboard to identify where capital is rotating. Your job is to synthesize across ALL sectors shown — never cherry-pick one sector and tell its story in isolation.
 
-Read the live sector watchlist data and produce 2-3 short paragraphs of plain prose (NO bullets, NO headers, NO markdown). Cover:
-1. Which sector is leading and which is lagging today, with concrete %.
-2. 2-3 specific tickers that exemplify the flow — frame as picks-and-shovels.
-3. Any rotation, weakness, or unusual divergence worth flagging.
-End with a single sentence on overall risk sentiment.
+REQUIRED FRAMING (pick one of two modes based on the data):
 
-Reference real tickers and real numbers. Be sharp. Avoid hedging language. Do NOT give financial advice — frame as analysis.`;
+MODE A — ROTATION (sectors are mixed, some up some down):
+Lead with the rotation pair, stated explicitly:
+"Capital is rotating FROM [weakest sector] (avg X%) INTO [strongest sector] (avg Y%)."
+Then in the second paragraph explain the structural read: what's getting sold and why (rate move, geopolitical cooling, profit-taking) vs what's being accumulated and why (catalyst, positioning, picks-and-shovels exposure). Name 1-2 standout tickers in the FROM sector and 2-3 in the TO sector.
+End with a single sentence on the implied risk sentiment.
+
+MODE B — BROAD-BASED MOVE (4+ sectors moving the same direction OR all sector averages within ±1.5% of zero):
+Do NOT force a rotation pair. State the macro theme up front: "Risk-on across the dashboard with X of 6 sectors green" or "Coordinated risk-off, breadth weakest in Y." In the second paragraph identify 3-5 specific cross-sector tickers that best embody the flow — pick large caps that exemplify the theme rather than the biggest movers by %. End with a sentence reading the macro setup.
+
+Style rules (both modes):
+- Plain prose. Two short paragraphs plus a closing sentence. No bullets, no headers, no markdown.
+- Always cite the actual sector average % from the leaderboard you receive.
+- Always cite specific ticker %s.
+- No hedging language ("may", "could", "might"). Be direct.
+- No financial advice — frame as analysis only.`;
 
 function buildSummaryPrompt(quotes) {
   const bySector = {};
@@ -667,19 +677,37 @@ function buildSummaryPrompt(quotes) {
     if (sectorQuotes.length) bySector[sector.name] = sectorQuotes;
   }
 
+  // Sector leaderboard, sorted strongest -> weakest. This is the input that anchors
+  // the rotation pair so the model can't dodge cross-sector synthesis.
+  const sectorStats = Object.entries(bySector)
+    .map(([name, qs]) => {
+      const avg = qs.reduce((s, q) => s + (q.changePct ?? 0), 0) / qs.length;
+      const up = qs.filter(q => (q.changePct ?? 0) > 0).length;
+      return { name, avg, up, total: qs.length, quotes: qs };
+    })
+    .sort((a, b) => b.avg - a.avg);
+
   const lines = [];
   lines.push(`Date: ${new Date().toISOString().split("T")[0]}`);
   lines.push(`Market state: ${quotes[0]?.marketState || "UNKNOWN"}`);
   lines.push("");
 
-  for (const [name, qs] of Object.entries(bySector)) {
-    const avg = qs.reduce((s, q) => s + (q.changePct ?? 0), 0) / qs.length;
-    const up = qs.filter(q => (q.changePct ?? 0) > 0).length;
-    const down = qs.filter(q => (q.changePct ?? 0) < 0).length;
-    lines.push(`${name} — avg ${avg.toFixed(2)}% (${up} up / ${down} down)`);
-    for (const q of qs) {
+  lines.push(`SECTOR LEADERBOARD (today's avg %, strongest first):`);
+  for (const s of sectorStats) {
+    lines.push(`  ${s.name}: ${s.avg >= 0 ? "+" : ""}${s.avg.toFixed(2)}%  (${s.up}/${s.total} green)`);
+  }
+  // Spread metric tells the model which mode to use
+  const spread = sectorStats.length > 1 ? sectorStats[0].avg - sectorStats[sectorStats.length - 1].avg : 0;
+  const allSameDirection = sectorStats.every(s => s.avg > 0) || sectorStats.every(s => s.avg < 0);
+  lines.push(`  (top-to-bottom spread: ${spread.toFixed(2)} pts; same direction: ${allSameDirection})`);
+  lines.push("");
+
+  // Per-sector ticker detail
+  for (const s of sectorStats) {
+    lines.push(`${s.name}:`);
+    for (const q of s.quotes) {
       const pct = q.changePct ?? 0;
-      lines.push(`  ${q.symbol} ${q.name || ""}: $${q.price?.toFixed(2)} ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`);
+      lines.push(`  ${q.symbol}: $${q.price?.toFixed(2)} ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`);
     }
     lines.push("");
   }
@@ -720,7 +748,15 @@ export function createSummary(container, config, ctx) {
     if (inFlight) return;
     if (!force && Date.now() - lastGeneratedAt < COOLDOWN_MS) return;
     const quotes = ctx.getAllQuotes?.() || [];
-    if (quotes.length < 5) return; // wait until enough watchlists have loaded
+    // Wait until at least 4 of the 6 sectors have loaded — otherwise the model
+    // will end up doing a single-sector read instead of cross-sector synthesis.
+    const sectorsWithData = new Set();
+    for (const q of quotes) {
+      for (const [sectorId, sector] of Object.entries(SECTORS)) {
+        if (sector.tickers.includes(q.symbol)) sectorsWithData.add(sectorId);
+      }
+    }
+    if (sectorsWithData.size < 4) return;
     inFlight = true;
     body.classList.add("loading");
     try {
