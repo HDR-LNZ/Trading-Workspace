@@ -283,15 +283,27 @@ export function createWatchlist(container, config, ctx) {
 
 /* ------------------------------------------------------------------ chart */
 
+// TradingView-style timeframe pills: each pill = bar duration. Range (how far
+// back to fetch) is auto-picked per timeframe based on Yahoo's intraday limits
+// (5m/15m/30m/1h capped at 60-730 days) and what's actually useful to look at.
+const TIMEFRAMES = [
+  { key: "5m",  interval: "5m",  range: "5d",  rangeLabel: "5 days",   title: "5-minute bars, last 5 trading days" },
+  { key: "15m", interval: "15m", range: "1mo", rangeLabel: "1 month",  title: "15-minute bars, last month" },
+  { key: "30m", interval: "30m", range: "1mo", rangeLabel: "1 month",  title: "30-minute bars, last month" },
+  { key: "1H",  interval: "1h",  range: "3mo", rangeLabel: "3 months", title: "Hourly bars, last 3 months" },
+  { key: "1D",  interval: "1d",  range: "2y",  rangeLabel: "2 years",  title: "Daily bars, last 2 years" },
+  { key: "1W",  interval: "1wk", range: "5y",  rangeLabel: "5 years",  title: "Weekly bars, last 5 years" },
+];
+const TF_BY_KEY = Object.fromEntries(TIMEFRAMES.map(t => [t.key, t]));
+
 export function createChart(container, config, ctx) {
   let symbol = (config.symbol || "SPY").toUpperCase();
-  let range = config.range || "1D";
-  // Always derive interval from range so saved layouts with stale interval values
-  // (e.g. older "5m" config when range is now "1D"=>15m) self-correct on load.
-  let interval; // assigned after RANGE_LABELS is defined below
+  // Migrate old saved configs with .range to the new .timeframe model
+  let timeframe = config.timeframe || (TF_BY_KEY[config.range] ? config.range : "1D");
+  if (!TF_BY_KEY[timeframe]) timeframe = "1D";
   let auto = config.auto !== false; // default ON — picks biggest mover from watchlists
   const MIN_MARKET_CAP = 10e9; // exclude small/meme caps
-  let chart, candleSeries, volumeSeries;
+  let chart, candleSeries;
 
   const shell = paneShell({
     title: `Chart`,
@@ -305,27 +317,13 @@ export function createChart(container, config, ctx) {
 
   const toolbar = document.createElement("div");
   toolbar.className = "chart-toolbar";
-  const RANGE_LABELS = {
-    "1D": { interval: "15m", title: "1 day, 15-minute bars" },
-    "1W": { interval: "30m", title: "1 week, 30-minute bars" },
-    "1M": { interval: "1h", title: "1 month, hourly bars" },
-    "3M": { interval: "1d", title: "3 months, daily bars" },
-    "6M": { interval: "1d", title: "6 months, daily bars" },
-    "1Y": { interval: "1d", title: "1 year, daily bars" },
-    "2Y": { interval: "1d", title: "2 years, daily bars" },
-  };
-  const intervalLabel = (r) => {
-    const i = RANGE_LABELS[r]?.interval || "1d";
-    return { "5m": "5m bars", "15m": "15m bars", "30m": "30m bars", "1h": "Hourly bars", "1d": "Daily bars" }[i] || `${i} bars`;
-  };
-  interval = RANGE_LABELS[range]?.interval || "1d";
   toolbar.innerHTML = `
     <button class="auto-pill ${auto ? "active" : ""}" data-auto title="Auto-pick the biggest %-mover from watchlists (market cap ≥ $10B). Re-checks every ~20s when any watchlist refreshes; chart re-fetches candles every 30s.">AUTO</button>
     <input type="text" class="chart-symbol-input" value="${symbol}" />
     <div class="range-pills">
-      ${["1D", "1W", "1M", "3M", "6M", "1Y", "2Y"].map(r => `<button class="range-pill ${r === range ? "active" : ""}" data-range="${r}" title="${RANGE_LABELS[r].title}">${r}</button>`).join("")}
+      ${TIMEFRAMES.map(t => `<button class="range-pill ${t.key === timeframe ? "active" : ""}" data-tf="${t.key}" title="${t.title}">${t.key}</button>`).join("")}
     </div>
-    <span class="interval-label" title="Each candle on the chart represents this duration">${intervalLabel(range)}</span>
+    <span class="interval-label" title="History window for the selected timeframe">${TF_BY_KEY[timeframe].rangeLabel}</span>
     <div class="chart-price-block">
       <span class="chart-price">—</span>
       <span class="chart-change">—</span>
@@ -347,7 +345,7 @@ export function createChart(container, config, ctx) {
     <div><span class="label">Volume</span><span class="val" data-stat="volume">—</span></div>
     <div><span class="label">Prev close</span><span class="val" data-stat="prev">—</span></div>
     <div><span class="label">Net</span><span class="val" data-stat="net">—</span></div>
-    <div><span class="label">Range</span><span class="val" data-stat="range">${range} · ${interval}</span></div>
+    <div><span class="label">Window</span><span class="val" data-stat="range">${TF_BY_KEY[timeframe].key} · ${TF_BY_KEY[timeframe].rangeLabel}</span></div>
   `;
   pane.appendChild(stats);
 
@@ -388,22 +386,16 @@ export function createChart(container, config, ctx) {
     btn.addEventListener("click", () => {
       toolbar.querySelectorAll(".range-pill").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      range = btn.dataset.range;
-      interval = rangeToInterval(range);
-      stats.querySelector('[data-stat="range"]').textContent = `${range} · ${interval}`;
+      timeframe = btn.dataset.tf;
+      const tf = TF_BY_KEY[timeframe];
+      stats.querySelector('[data-stat="range"]').textContent = `${tf.key} · ${tf.rangeLabel}`;
       const intervalLabelEl = toolbar.querySelector(".interval-label");
-      if (intervalLabelEl) intervalLabelEl.textContent = intervalLabel(range);
-      config.range = range; config.interval = interval;
+      if (intervalLabelEl) intervalLabelEl.textContent = tf.rangeLabel;
+      config.timeframe = timeframe;
       ctx.persistLayout?.();
       instance.refresh();
     });
   });
-
-  function rangeToInterval(r) {
-    // Single source of truth: read from RANGE_LABELS so the interval, the
-    // tooltip and the visible label can never drift out of sync.
-    return RANGE_LABELS[r]?.interval || "1d";
-  }
 
   function buildChart() {
     if (chart) { chart.remove(); chart = null; }
@@ -423,20 +415,13 @@ export function createChart(container, config, ctx) {
       rightPriceScale: { borderColor: "#1f2536" },
     };
     chart = LightweightCharts.createChart(chartContainer, opts);
-    // v5 API
     candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
       upColor: "#2ee07a", downColor: "#ff4d7a",
       borderUpColor: "#2ee07a", borderDownColor: "#ff4d7a",
       wickUpColor: "#2ee07a", wickDownColor: "#ff4d7a",
     });
-    volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
-      color: "#5b637a",
-      priceFormat: { type: "volume" },
-      priceScaleId: "vol",
-    });
-    chart.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.85, bottom: 0 },
-    });
+    // Volume histogram intentionally omitted to maximize candle real estate;
+    // total session volume is still shown in the stats row below the chart.
   }
 
   const ro = new ResizeObserver(() => {
@@ -462,14 +447,14 @@ export function createChart(container, config, ctx) {
             ctx.persistLayout?.();
           }
         }
-        const data = await api.getCandles(symbol, mapRange(range), interval);
+        const tf = TF_BY_KEY[timeframe];
+        const data = await api.getCandles(symbol, tf.range, tf.interval);
         const series = data.candles;
         if (!series?.length) {
           toolbar.querySelector(".chart-price").textContent = "No data";
           return;
         }
         candleSeries.setData(series.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
-        volumeSeries.setData(series.map(c => ({ time: c.time, value: c.volume, color: c.close >= c.open ? "rgba(46,224,122,0.4)" : "rgba(255,77,122,0.4)" })));
 
         // Session stats — aggregate over the visible range, not just the last candle.
         const sessionOpen = series[0].open;
@@ -507,10 +492,6 @@ export function createChart(container, config, ctx) {
     },
     destroy() { clearInterval(timer); ro.disconnect(); chart?.remove(); },
   };
-
-  function mapRange(r) {
-    return { "1D": "1d", "1W": "5d", "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y", "2Y": "2y" }[r] || "1d";
-  }
 
   function pickBiggestMover() {
     const all = ctx.getAllQuotes?.() || [];
