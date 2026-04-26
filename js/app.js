@@ -239,26 +239,34 @@ const chatMessages = document.getElementById("chat-messages");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 
-let chatState = null; // { sectorId, history: [{role, content}] }
+let chatState = null; // { kind, key, sectorId?, summary?, history: [{role, content}] }
 
-function openChat({ sectorId, quotes }) {
-  const sector = SECTORS[sectorId];
-  if (!sector) return;
-  chatState = {
-    sectorId,
-    history: loadChatHistory(sectorId),
-    quotes: quotes || [],
-  };
-  chatTitle.textContent = `${sector.name} · Chat`;
-  chatSub.textContent = "Picks-and-shovels analysis powered by Claude";
+function openChat(opts) {
+  // opts can be { kind: "sector", sectorId, quotes } OR { kind: "summary", summary, quotes }
+  const kind = opts.kind || "sector";
+  if (kind === "sector") {
+    const sector = SECTORS[opts.sectorId];
+    if (!sector) return;
+    const key = `sector:${opts.sectorId}`;
+    chatState = { kind, key, sectorId: opts.sectorId, history: loadChatHistory(key), quotes: opts.quotes || [] };
+    chatTitle.textContent = `${sector.name} · Chat`;
+    chatSub.textContent = "Picks-and-shovels analysis powered by Claude";
+  } else if (kind === "summary") {
+    const key = "summary";
+    chatState = { kind, key, summary: opts.summary || "", history: loadChatHistory(key), quotes: opts.quotes || [] };
+    chatTitle.textContent = "Money Flow Summary · Chat";
+    chatSub.textContent = "Interrogate the executive summary. Ask about sectors not on the dashboard — Claude knows the broader market.";
+  } else {
+    return;
+  }
   renderChat();
   chatOverlay.hidden = false;
   chatInput.focus();
 }
 
-function loadChatHistory(sectorId) {
+function loadChatHistory(key) {
   try {
-    const raw = localStorage.getItem(CHAT_KEY(sectorId));
+    const raw = localStorage.getItem(CHAT_KEY(key));
     if (raw) return JSON.parse(raw);
   } catch {}
   return [];
@@ -266,7 +274,7 @@ function loadChatHistory(sectorId) {
 
 function saveChatHistory() {
   if (!chatState) return;
-  localStorage.setItem(CHAT_KEY(chatState.sectorId), JSON.stringify(chatState.history));
+  localStorage.setItem(CHAT_KEY(chatState.key), JSON.stringify(chatState.history));
 }
 
 function renderChat() {
@@ -274,8 +282,12 @@ function renderChat() {
   if (!chatState.history.length) {
     const intro = document.createElement("div");
     intro.className = "chat-msg assistant";
-    const sector = SECTORS[chatState.sectorId];
-    intro.textContent = `Ask me about ${sector.name}. I know the tickers in this list, their current prices, and the picks-and-shovels thesis. Try: "Which of these has the cleanest balance sheet?" or "Why did MP move today?"`;
+    if (chatState.kind === "sector") {
+      const sector = SECTORS[chatState.sectorId];
+      intro.textContent = `Ask me about ${sector.name}. I know the tickers in this list, their current prices, and the picks-and-shovels thesis. Try: "Which of these has the cleanest balance sheet?" or "Why did MP move today?"`;
+    } else if (chatState.kind === "summary") {
+      intro.textContent = `I have today's executive summary plus every ticker on your dashboard. I can also reason about sectors that AREN'T on your dashboard using my training knowledge — semis, biotech, REITs, regional banks, anything. Try: "What about semiconductors? They seemed strong today" or "Anything I should add a watchlist for?"`;
+    }
     chatMessages.appendChild(intro);
   }
   for (const msg of chatState.history) {
@@ -303,12 +315,14 @@ chatForm.addEventListener("submit", async (e) => {
   renderChat();
   saveChatHistory();
 
-  const sector = SECTORS[chatState.sectorId];
   const ctxLines = chatState.quotes.length
     ? chatState.quotes.map(q => `- ${q.symbol} (${q.name}): $${q.price?.toFixed(2)} ${q.changePct >= 0 ? "+" : ""}${q.changePct?.toFixed(2)}%`).join("\n")
     : "(quotes not yet loaded)";
 
-  const system = `You are a sharp markets analyst helping the user invest where institutional and government money is flowing. Your focus right now is the "${sector.name}" sector.
+  let system;
+  if (chatState.kind === "sector") {
+    const sector = SECTORS[chatState.sectorId];
+    system = `You are a sharp markets analyst helping the user invest where institutional and government money is flowing. Your focus right now is the "${sector.name}" sector.
 
 Sector thesis: ${sector.description}
 
@@ -318,6 +332,27 @@ ${ctxLines}
 Today's date: ${new Date().toISOString().split("T")[0]}.
 
 Be concise (2-4 short paragraphs max). Use specific tickers from the watchlist. When relevant, name the picks-and-shovels angle (who supplies the supplier?). Flag if the user asks about something outside this sector. Do NOT give financial advice — frame everything as analysis.`;
+  } else {
+    // summary kind — broader scope, can reason about off-dashboard sectors
+    system = `You are a sharp markets analyst answering follow-up questions on a trader's dashboard. The user is interrogating today's executive summary.
+
+The dashboard tracks 6 sectors via watchlists: Critical Minerals, Defense, AI Infrastructure, Nuclear/Uranium, Energy, Cybersecurity. The summary you generated reflects only those sectors.
+
+Today's executive summary:
+${chatState.summary || "(summary not yet generated)"}
+
+All current quotes on the dashboard:
+${ctxLines}
+
+Today's date: ${new Date().toISOString().split("T")[0]}.
+
+Rules:
+- Be concise — 2-4 short paragraphs max, plain prose, no bullets or markdown.
+- Reference real tickers and real % numbers from the dashboard data above when relevant.
+- If the user asks about a sector or theme NOT on the dashboard (semiconductors as a standalone group, biotech, regional banks, REITs, transports, etc.), explicitly note that you don't have live quotes for that group, then reason from your training knowledge — name the canonical large-cap names, the picks-and-shovels angle, and how it fits the broader rotation the dashboard is showing.
+- If the user asks why something wasn't in the summary, be honest: it's because there's no watchlist for that sector on this dashboard — and suggest they could add one (the "+ Add widget" button creates new watchlists).
+- Don't give financial advice. Frame as analysis.`;
+  }
 
   const placeholder = document.createElement("div");
   placeholder.className = "chat-msg assistant";

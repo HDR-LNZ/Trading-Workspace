@@ -739,10 +739,16 @@ function buildSummaryPrompt(quotes) {
 }
 
 export function createSummary(container, config, ctx) {
+  let lastSummaryText = "";
   const shell = paneShell({
     title: "Money Flow Summary",
     sub: "Live read on where capital is rotating across the watchlists. Refreshed every 5 min.",
     sectorId: null,
+    onChat: () => ctx.openChat({
+      kind: "summary",
+      summary: lastSummaryText,
+      quotes: ctx.getAllQuotes?.() || [],
+    }),
     onRefresh: () => instance.refresh(true),
   });
   container.appendChild(shell.wrap);
@@ -776,10 +782,11 @@ export function createSummary(container, config, ctx) {
     try {
       const prompt = buildSummaryPrompt(quotes);
       const res = await api.chat([{ role: "user", content: prompt }], SUMMARY_SYSTEM);
+      lastSummaryText = res.content;
       const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       body.innerHTML = `
         <div class="summary-text">${escapeHtml(res.content)}</div>
-        <div class="summary-meta">Generated ${time} · ${quotes.length} tickers across ${Object.keys(SECTORS).length} sectors</div>
+        <div class="summary-meta">Generated ${time} · ${quotes.length} tickers across ${Object.keys(SECTORS).length} sectors · click 💬 to ask follow-ups</div>
       `;
       lastGeneratedAt = Date.now();
     } catch (e) {
