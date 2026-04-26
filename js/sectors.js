@@ -176,6 +176,38 @@ export const SECTORS = {
       "POWL",  // Powell Industries — switchgear
     ],
   },
+  "data-center-reits": {
+    name: "Data Center REITs",
+    color: "#42d4a4",
+    description:
+      "Real estate that compute lives in. Pure-play data center REITs (EQIX, DLR) lease space and power to every hyperscaler; tower REITs (AMT, CCI, SBAC) own the cell sites that move data to those facilities. Both monetize AI/cloud capex without taking compute risk directly.",
+    tickers: [
+      "EQIX",  // Equinix — interconnection / colocation leader
+      "DLR",   // Digital Realty — hyperscale wholesale
+      "IRM",   // Iron Mountain — storage pivoting into data centers
+      "AMT",   // American Tower — towers + Coresite data centers
+      "CCI",   // Crown Castle — towers + small cells / fiber
+      "SBAC",  // SBA Communications — towers
+    ],
+  },
+  software: {
+    name: "Software",
+    color: "#5be0c4",
+    description:
+      "Enterprise software platforms monetizing AI — agents, copilots, workflow automation, data infra. Where the AI capex cycle ultimately turns into revenue. Includes PLTR for government and commercial AI ops exposure.",
+    tickers: [
+      "MSFT",  // Microsoft — Azure + Copilot mega-cap
+      "ORCL",  // Oracle — cloud + AI infra deals (OpenAI capacity)
+      "PLTR",  // Palantir — gov + commercial AI ops platform
+      "CRM",   // Salesforce — Agentforce / Data Cloud
+      "NOW",   // ServiceNow — enterprise workflow + AI
+      "ADBE",  // Adobe — creative AI (Firefly)
+      "SNOW",  // Snowflake — data cloud / AI
+      "DDOG",  // Datadog — observability
+      "MDB",   // MongoDB — modern data infra
+      "INTU",  // Intuit — vertical AI applications
+    ],
+  },
 };
 
 export const DEFAULT_SECTOR_ORDER = [
