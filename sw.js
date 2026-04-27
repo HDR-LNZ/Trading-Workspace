@@ -1,6 +1,6 @@
 // Minimal service worker for PWA install. Network-first; no aggressive caching
 // because we want fresh quotes/news.
-const CACHE = "tw-shell-v2";
+const CACHE = "tw-shell-v3";
 const SHELL = ["./", "./index.html", "./styles.css", "./manifest.json"];
 
 self.addEventListener("install", (e) => {
