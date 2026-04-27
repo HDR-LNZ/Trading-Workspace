@@ -190,6 +190,24 @@ export const SECTORS = {
       "SBAC",  // SBA Communications — towers
     ],
   },
+  healthcare: {
+    name: "Healthcare",
+    color: "#5dc89c",
+    description:
+      "Picks-and-shovels of the healthcare industry — lab tools, diagnostics, genomic sequencing, robotic surgery hardware, CROs and the software pharma runs on. Sells the equipment and services that drug developers, hospitals and labs can't operate without, regardless of which drug or device wins.",
+    tickers: [
+      "TMO",   // Thermo Fisher Scientific — lab tools mega-cap
+      "DHR",   // Danaher — diagnostics + life sciences
+      "ISRG",  // Intuitive Surgical — robotic surgery hardware
+      "ILMN",  // Illumina — genomic sequencing tools
+      "A",     // Agilent — analytical instruments
+      "IQV",   // IQVIA — clinical research outsourcing (CRO)
+      "BDX",   // Becton Dickinson — medical devices / supplies
+      "DXCM",  // Dexcom — continuous glucose monitoring hardware
+      "VEEV",  // Veeva Systems — software for pharma / life sciences
+      "IDXX",  // IDEXX Laboratories — veterinary diagnostics
+    ],
+  },
   "ai-data-infra": {
     name: "AI Software & Data Infra",
     color: "#5be0c4",
